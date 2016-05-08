@@ -1,0 +1,22 @@
+#! /bin/bash
+
+etcd -name <%= @hostname %> \
+        -initial-advertise-peer-urls http://<%= @private_ip %>:7001 \
+        -listen-peer-urls http://<%= @private_ip %>:7001 \
+        -listen-client-urls http://<%= @private_ip %>:4001,http://127.0.0.1:4001 \
+        -advertise-client-urls http://<%= @private_ip %>:4001 \
+        -initial-cluster-token etcd-cluster-<%= @token_postfix %> \
+        -initial-cluster <%= @members %> \
+        -initial-cluster-state new > /var/log/etcd_bootstrap.log 2>&1 &
+
+#check if the member is added
+while true; do
+	previous=$(ls -l /var/log/etcd_bootstrap.log | awk '{print $5}')
+	sleep 5
+	current=$(ls -l /var/log/etcd_bootstrap.log | awk '{print $5}')
+	if [ "$previous" == "$current" ]; then
+		break
+	fi
+done
+
+echo "etcd clustering is finished!"

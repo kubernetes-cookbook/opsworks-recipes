@@ -1,0 +1,84 @@
+#!/bin/bash
+#
+# flanneld	This shell script takes care of starting and stopping flanneld
+#
+# chkconfig: - 60 74
+# description: flanneld
+
+### BEGIN INIT INFO
+# Provides: flanneld
+# Required-Start: $network $local_fs $remote_fs
+# Required-Stop: $network $local_fs $remote_fs
+# Should-Start: $syslog $named ntpdate
+# Should-Stop: $syslog $named
+# Short-Description: start and stop flanneld
+# Description: flanneld
+### END INIT INFO
+
+# Source function library.
+. /etc/init.d/functions
+
+# Source networking configuration.
+. /etc/sysconfig/network
+
+prog=/usr/local/bin/flanneld
+lockfile=/var/lock/subsys/`basename $prog`
+
+start() {
+	# Start daemon.
+	echo -n $"Starting $prog: "
+	daemon $prog \
+		--etcd-endpoints=http://root:<%= @etcd_password %>@<%= @etcd_url %> \
+		-ip-masq=true \
+		> /var/log/flanneld.log 2>&1 &
+	RETVAL=$?
+	echo
+	# add docker network config
+	sleep 5
+	FLANNEL_SUBNET=$(fgrep "FLANNEL_SUBNET" /run/flannel/subnet.env | awk -F "=" '{print $2}')
+	FLANNEL_MTU=$(fgrep "FLANNEL_MTU" /run/flannel/subnet.env | awk -F "=" '{print $2}')
+	FLANNEL_IPMASQ=$(fgrep "FLANNEL_IPMASQ" /run/flannel/subnet.env | awk -F "=" '{print $2}')
+	echo "DOCKER_NETWORK_OPTIONS=\" --bip=$FLANNEL_SUBNET --mtu=$FLANNEL_MTU --ip-masq=$FLANNEL_IPMASQ \"" > /run/flannel/docker.env
+	[ $RETVAL -eq 0 ] && touch $lockfile
+	return $RETVAL
+}
+
+stop() {
+	[ "$EUID" != "0" ] && exit 4
+        echo -n $"Shutting down $prog: "
+	killproc $prog
+	RETVAL=$?
+    echo
+	rm -f /run/flannel/docker.env
+	[ $RETVAL -eq 0 ] && rm -f $lockfile
+	return $RETVAL
+}
+
+# See how we were called.
+case "$1" in
+  start)
+	start
+	;;
+  stop)
+	stop
+	;;
+  status)
+	status $prog
+	;;
+  restart|force-reload)
+	stop
+	start
+	;;
+  try-restart|condrestart)
+	if status $prog > /dev/null; then
+	    stop
+	    start
+	fi
+	;;
+  reload)
+	exit 3
+	;;
+  *)
+	echo $"Usage: $0 {start|stop|status|restart|try-restart|force-reload}"
+	exit 2
+esac

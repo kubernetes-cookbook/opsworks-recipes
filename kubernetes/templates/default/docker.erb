@@ -1,0 +1,20 @@
+# /etc/sysconfig/docker
+#
+# Other arguments to pass to the docker daemon process
+# These will be parsed by the sysv initscript and appended
+# to the arguments list passed to docker -d
+
+#. /run/flannel/subnet.env 
+. /opt/mk-docker-opts.sh
+. /run/docker_opts.env
+
+INSECURE_REGISTRY="<%= @registry_url %>"
+
+other_args="${DOCKER_OPTS} --insecure-registry ${INSECURE_REGISTRY}"
+#other_args="--bip=${FLANNEL_SUBNET} --mtu=${FLANNEL_MTU} --ip-masq=${FLANNEL_IPMASQ} --insecure-registry ${INSECURE_REGISTRY}"
+DOCKER_CERT_PATH=/etc/docker
+
+# Location used for temporary files, such as those created by
+# # docker load and build operations. Default is /var/lib/docker/tmp
+# # Can be overriden by setting the following environment variable.
+# # DOCKER_TMPDIR=/var/tmp

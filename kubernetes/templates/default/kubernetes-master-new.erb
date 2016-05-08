@@ -1,0 +1,140 @@
+#!/bin/bash
+#
+# kubernetes	This shell script takes care of starting and stopping kubernetes
+#
+# chkconfig: - 99 99
+# description: kubernetes
+
+### BEGIN INIT INFO
+# Provides: kubernetes
+# Required-Start: $network $local_fs $remote_fs
+# Required-Stop: $network $local_fs $remote_fs
+# Should-Start: $syslog $named flanneld docker
+# Should-Stop: $syslog $named
+# Short-Description: start and stop kubernetes
+# Description: kubernetes
+### END INIT INFO
+
+# Source function library.
+. /etc/init.d/functions
+
+# Source networking configuration.
+. /etc/sysconfig/network
+
+#prog=/usr/local/bin/hyperkube
+apiserver_prog=/usr/local/bin/kube-apiserver
+scheduler_prog=/usr/local/bin/kube-scheduler
+controller_prog=/usr/local/bin/kube-controller-manager
+proxy_prog=/usr/local/bin/kube-proxy
+
+apiserver_lockfile=/var/lock/subsys/`basename $apiserver_prog`
+scheduler_lockfile=/var/lock/subsys/`basename $scheduler_prog`
+controller_lockfile=/var/lock/subsys/`basename $controller_prog`
+proxy_lockfile=/var/lock/subsys/`basename $proxy_prog`
+
+hostname=`hostname`
+logfile=/var/log/k8s
+
+CLUSTER_NAME=my-happy-cluster
+ETCD_SERVERS="<%= @etcd_server %>"
+CLUSTER_IP_RANGE="<%= @cluster_cidr %>"
+MASTER="127.0.0.1:8080"
+
+
+start() {
+	#set IP range to etcd
+	curl -L ${ETCD_SERVERS}/v2/keys/coreos.com/network/config \
+		-XPUT -d value="{ \"Network\": \"${CLUSTER_IP_RANGE}\" }"
+
+
+	# Start daemon.
+	echo $"Starting apiserver: "
+	daemon $apiserver_prog \
+	--service-cluster-ip-range=${CLUSTER_IP_RANGE} \
+	--insecure-port=8080 \
+	--secure-port=6443 \
+	--basic-auth-file="<%= @ba_path %>" \
+	--insecure-bind-address=0.0.0.0 \
+	--etcd_servers=${ETCD_SERVERS} \
+	> ${logfile}-apiserver.log 2>&1 &
+	
+	echo $"Starting controller-manager: "
+	daemon $controller_prog \
+	--master=${MASTER} \
+	> ${logfile}-controller-manager.log 2>&1 &
+
+	echo $"Starting scheduler: "
+	daemon $scheduler_prog \
+	--master=${MASTER} \
+	> ${logfile}-scheduler.log 2>&1 &
+
+	echo $"Starting proxy: "
+	daemon $proxy_prog \
+	--master=${MASTER} \
+	--v=2 \
+	> ${logfile}-proxy.log 2>&1 &
+
+	RETVAL=$?
+	[ $RETVAL -eq 0 ] && touch $apiserver_lockfile && touch $scheduler_lockfile \
+					  && touch $controller_lockfile && touch $proxy_lockfile
+	return $RETVAL
+}
+
+stop() {
+	[ "$EUID" != "0" ] && exit 4
+	echo -n $"Shutting down $proxy_prog: "
+	killproc $proxy_prog
+
+	RETVAL=$?
+	echo
+	
+	echo -n $"Shutting down $controller_prog: "
+	killproc $controller_prog
+
+	RETVAL=$(($RETVAL&$?))
+	echo
+
+	echo -n $"Shutting down $scheduler_prog: "
+	killproc $scheduler_prog
+
+	RETVAL=$(($RETVAL&$?))
+	echo
+
+	echo -n $"Shutting down $apiserver_prog: "
+	killproc $apiserver_prog
+
+	RETVAL=$(($RETVAL&$?))
+	echo
+
+	[ $RETVAL -eq 0 ] && rm -f $apiserver_lockfile $scheduler_lockfile $controller_lockfile $proxy_lockfile
+	return $RETVAL
+}
+
+# See how we were called.
+case "$1" in
+  start)
+	start
+	;;
+  stop)
+	stop
+	;;
+  status)
+	status $prog
+	;;
+  restart|force-reload)
+	stop
+	start
+	;;
+  try-restart|condrestart)
+	if status $prog > /dev/null; then
+	    stop
+	    start
+	fi
+	;;
+  reload)
+	exit 3
+	;;
+  *)
+	echo $"Usage: $0 {start|stop|status|restart|try-restart|force-reload}"
+	exit 2
+esac

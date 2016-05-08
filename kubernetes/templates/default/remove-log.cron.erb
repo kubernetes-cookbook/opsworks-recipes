@@ -1,0 +1,10 @@
+#! /bin/bash
+
+LIMITED_MB_SIZE=500
+
+RmFiles=($(ls -l /var/log/*-* | awk "{ if (\$5 >= $(($LIMITED_MB_SIZE*1000*1000)) ) print \$9 }"))
+for (( i=0; i<${#RmFiles[@]}; i++ ))
+do
+  #echo ${RmFiles[$i]}
+  rm -f ${RmFiles[$i]}
+done

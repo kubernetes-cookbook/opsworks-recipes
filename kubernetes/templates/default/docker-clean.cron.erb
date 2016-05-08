@@ -1,0 +1,28 @@
+#! /bin/bash
+
+LIMITED_DISK_PCENT=70
+
+USED=$(df / --output=pcent | awk 'NR==2''{ print $1}' | cut -f1 -d%)
+
+if [ $(($USED)) -gt $(($LIMITED_DISK_PCENT)) ]; then
+
+  # remove exited container
+  docker rm $(docker ps -f=status=exited -q)
+
+  # remove <none> image
+  docker rmi $(docker images -q -f dangling=true)
+
+  # remove unused volume
+  docker run -v /var/run/docker.sock:/var/run/docker.sock -v /var/lib/docker:/var/lib/docker --rm martin/docker-cleanup-volumes
+
+  # remove logfiles if the total size of /var/log large than 500MB, and remove the oldest one
+  LOGDIR_SIZE=$(du -s /var/log | awk '{ if ($2 == "/var/log" ) print $1 }')
+  while [ $(($LOGDIR_SIZE)) -gt $((LIMITED_MB_SIZE*1000)) ]
+  do
+    OLDLOG=$(ls -tr /var/log/messages-* | head -1)
+    #echo $OLDLOG
+    rm -f $OLDLOG
+    LOGDIR_SIZE=$(du -s /var/log | awk '{ if ($2 == "/var/log" ) print $1 }')
+    sleep 3
+  done
+fi
